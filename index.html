@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<link rel="icon" href="data:,">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What If the Moon Hit Earth? — Technical Talk India</title>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/build/three.module.js", "three/addons/": "./vendor/three/examples/jsm/" } }
+</script>
+<style>
+@font-face { font-family: 'Montserrat'; src: url('./assets/fonts/Montserrat[wght].ttf'); font-weight: 100 900; }
+@font-face { font-family: 'Share Tech Mono'; src: url('./assets/fonts/ShareTechMono-Regular.ttf'); }
+:root { --amber: #ffcf70; --ink: #f4f1ea; }
+* { box-sizing: border-box; margin: 0; }
+html, body { background: #000; width: 100%; height: 100%; overflow: hidden; color: var(--ink); font-family: 'Montserrat', 'Helvetica Neue', Arial, sans-serif; }
+#stage { position: absolute; left: 50%; top: 50%; transform-origin: 50% 50%; transform: translate(-50%, -50%); background: #000; overflow: hidden; }
+#gl { position: absolute; inset: 0; display: block; }
+#hudlayer { position: absolute; inset: 0; pointer-events: none; }
+#hudlayer > * { position: absolute; opacity: 0; will-change: opacity; }
+#title { left: 0; right: 0; top: 58%; text-align: center; font-weight: 200; font-size: 76px; letter-spacing: .34em; text-indent: .34em; text-shadow: 0 0 40px rgba(120,170,255,.45); }
+#title small { display: block; margin-top: 30px; font-size: 20px; font-weight: 500; letter-spacing: .6em; text-indent: .6em; color: var(--amber); text-shadow: none; }
+#chapter { left: 96px; bottom: 214px; display: flex; gap: 20px; align-items: baseline; font-size: 21px; letter-spacing: .32em; font-weight: 500; text-shadow: 0 2px 14px #000; }
+#chapter b { font-family: 'Share Tech Mono', monospace; color: var(--amber); font-weight: 400; font-size: 26px; letter-spacing: .12em; }
+#caption { left: 50%; bottom: 96px; transform: translateX(-50%); width: 1280px; text-align: center; font-size: 34px; line-height: 1.38; font-weight: 500; letter-spacing: .01em; text-shadow: 0 2px 4px rgba(0,0,0,.9), 0 0 24px rgba(0,0,0,.85); }
+#hud { right: 80px; top: 74px; text-align: right; font-family: 'Share Tech Mono', monospace; display: grid; gap: 14px; text-shadow: 0 1px 10px #000; }
+#hud i { display: block; font-style: normal; font-size: 14px; letter-spacing: .28em; color: rgba(244,241,234,.62); }
+#hud b { display: block; font-weight: 400; font-size: 32px; letter-spacing: .04em; color: var(--ink); }
+#hud u { text-decoration: none; font-size: 17px; color: var(--amber); }
+#roche { left: 96px; top: 74px; font-family: 'Share Tech Mono', monospace; text-shadow: 0 1px 10px #000; }
+#roche i { display: block; font-style: normal; font-size: 14px; letter-spacing: .28em; color: rgba(244,241,234,.62); }
+#roche b { display: block; font-weight: 400; font-size: 30px; color: var(--amber); margin: 6px 0; }
+#roche u { text-decoration: none; font-size: 15px; letter-spacing: .12em; color: rgba(244,241,234,.8); }
+#disclaimer { left: 96px; bottom: 44px; font-size: 13px; letter-spacing: .26em; font-weight: 500; color: rgba(244,241,234,.85); text-shadow: 0 1px 8px #000; }
+#disclaimer.big { left: 50%; transform: translateX(-50%); bottom: auto; top: 112px; font-size: 22px; letter-spacing: .3em; color: var(--amber); padding: 14px 26px; border: 1px solid rgba(255,207,112,.45); background: rgba(0,0,0,.35); }
+#brand { right: 80px; bottom: 44px; font-size: 14px; letter-spacing: .42em; font-weight: 600; text-shadow: 0 1px 8px #000; }
+#brand::before { content: ''; display: inline-block; width: 9px; height: 9px; margin-right: 14px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 14px var(--amber); }
+#question { left: 0; right: 0; top: 40%; text-align: center; font-size: 62px; font-weight: 200; letter-spacing: .3em; text-indent: .3em; text-shadow: 0 0 40px rgba(255,160,90,.5); }
+#arrows { inset: 0; }
+#arrows .note { position: absolute; left: 50%; transform: translateX(-50%); top: 120px; font-family: 'Share Tech Mono', monospace; font-size: 17px; letter-spacing: .3em; color: var(--amber); text-shadow: 0 1px 8px #000; }
+#timecode { display: none; position: absolute; left: 10px; top: 6px; font: 14px 'Share Tech Mono', monospace; opacity: .6; }
+#loading { position: absolute; inset: 0; display: grid; place-items: center; background: #000; z-index: 9; font-family: 'Share Tech Mono', monospace; letter-spacing: .2em; color: var(--amber); }
+#ui { position: fixed; left: 0; right: 0; bottom: 0; padding: 10px 18px; display: flex; gap: 14px; align-items: center; background: linear-gradient(transparent, rgba(0,0,0,.7)); z-index: 20; font-family: 'Share Tech Mono', monospace; font-size: 14px; transition: opacity .3s; }
+#ui.hidden { opacity: 0; } #ui:hover { opacity: 1; }
+#ui button { background: none; border: 1px solid rgba(255,255,255,.4); color: #fff; width: 34px; height: 30px; cursor: pointer; }
+#scrub { flex: 1; accent-color: var(--amber); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gl"></canvas>
+  <div id="hudlayer">
+    <div id="arrows"></div>
+    <div id="title">WHAT IF THE MOON HIT EARTH?<small>A HYPOTHETICAL SIMULATION</small></div>
+    <div id="chapter"></div>
+    <div id="hud"></div>
+    <div id="roche"></div>
+    <div id="caption"></div>
+    <div id="disclaimer">HYPOTHETICAL SCENARIO · NOT A SCIENTIFIC PREDICTION</div>
+    <div id="brand">TECHNICAL TALK INDIA</div>
+    <div id="question">WHAT IF IT CAME BACK?</div>
+    <div id="timecode"></div>
+  </div>
+  <div id="loading"><span id="status">Loading…</span></div>
+</div>
+<div id="ui"><button id="play">▶</button><input id="scrub" type="range" min="0" max="480" step="0.01" value="0"><span id="clock">00:00 / 08:00</span><span style="opacity:.55">space ▸ play · ←/→ ±5s · 1–8 chapters · f fullscreen · h hide</span></div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "name": "what-if-the-moon-hit-earth",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "8-minute cinematic Three.js WebGL simulation: What If the Moon Hit Earth? — Technical Talk India",
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "textures": "python3 tools/bake_textures.py --res 4096",
+    "textures:8k": "python3 tools/bake_textures.py --res 8192",
+    "render": "node tools/render.mjs",
+    "render:1080": "node tools/render.mjs --res 1080 --out out/1080p",
+    "render:4k": "node tools/render.mjs --res 4k --out out/4k",
+    "audio": "python3 tools/make_audio.py",
+    "mux": "node tools/mux.mjs"
+  },
+  "dependencies": {
+    "puppeteer-core": "^24.0.0"
+  },
+  "devDependencies": {
+    "@sparticuz/chromium": "^153.0.0"
+  }
+}
