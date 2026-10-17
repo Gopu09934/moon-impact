@@ -1,0 +1,130 @@
+name: Render film (1080p / 4K · 30 fps)
+
+# Actions → "Render film" → Run workflow.  Output: downloadable MP4 artifact(s) + (optional) a GitHub Release.
+on:
+  workflow_dispatch:
+    inputs:
+      resolution:
+        description: "Which version(s) to render"
+        type: choice
+        options: [both, 1080p, 4k]
+        default: both
+      chunk_seconds_1080:
+        description: "Seconds per parallel job (1080p)"
+        default: "30"
+      chunk_seconds_4k:
+        description: "Seconds per parallel job (4K) – keep ≤ 8 so each job finishes inside GitHub's 6 h limit"
+        default: "6"
+      narration:
+        description: "Generate AI narration (edge-tts, en-IN-PrabhatNeural)"
+        type: boolean
+        default: true
+      release:
+        description: "Also publish a GitHub Release with the MP4s"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      chunks: ${{ steps.p.outputs.chunks }}
+      res: ${{ steps.p.outputs.res }}
+    steps:
+      - id: p
+        shell: node {0}
+        run: |
+          const fs = require('fs');
+          const want = '${{ inputs.resolution }}';
+          const defs = [
+            { res: '1080p', pix: 1, bake: 4096, sec: +'${{ inputs.chunk_seconds_1080 }}' },
+            { res: '4k',    pix: 2, bake: 8192, sec: +'${{ inputs.chunk_seconds_4k }}' },
+          ].filter(d => want === 'both' || want === d.res);
+          const chunks = [];
+          for (const d of defs) for (let s = 0, i = 0; s < 480; s += d.sec, i++) chunks.push({ res: d.res, bake: d.bake, idx: String(i).padStart(3, '0'), start: s, end: Math.min(480, s + d.sec) });
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `chunks=${JSON.stringify(chunks)}\nres=${JSON.stringify(defs.map(d => ({ res: d.res, bake: d.bake })))}\n`);
+
+  textures:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.res) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install numpy pillow scipy
+      - name: Bake ${{ matrix.bake }}-px textures
+        run: python3 tools/bake_textures.py --res ${{ matrix.bake }}
+      - uses: actions/upload-artifact@v4
+        with: { name: "textures-${{ matrix.res }}", path: assets/baked, retention-days: 3 }
+
+  audio:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install numpy scipy edge-tts
+      - run: python3 tools/make_audio.py
+      - if: ${{ inputs.narration }}
+        run: python3 tools/narrate.py || true
+      - uses: actions/upload-artifact@v4
+        with: { name: audio, path: assets/audio, retention-days: 3 }
+
+  render:
+    needs: [plan, textures]
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.chunks) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - run: npm install --no-audit --no-fund
+      - uses: actions/download-artifact@v4
+        with: { name: "textures-${{ matrix.res }}", path: assets/baked }
+      - name: Render ${{ matrix.res }} · ${{ matrix.start }}s → ${{ matrix.end }}s (software WebGL)
+        env: { CHROME_PATH: /usr/bin/google-chrome }
+        run: |
+          node tools/render.mjs --res ${{ matrix.res == '4k' && '4k' || '1080' }} \
+            --start ${{ matrix.start }} --end ${{ matrix.end }} \
+            --out out/${{ matrix.res }}/chunk_${{ matrix.idx }}.mp4
+      - uses: actions/upload-artifact@v4
+        with: { name: "chunk-${{ matrix.res }}-${{ matrix.idx }}", path: "out/${{ matrix.res }}/chunk_${{ matrix.idx }}.mp4", retention-days: 3 }
+
+  assemble:
+    needs: [plan, render, audio]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.res) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - uses: actions/download-artifact@v4
+        with: { pattern: "chunk-${{ matrix.res }}-*", path: "out/${{ matrix.res }}/chunks", merge-multiple: true }
+      - uses: actions/download-artifact@v4
+        with: { name: audio, path: assets/audio }
+      - name: Join + mux audio
+        run: node tools/mux.mjs --chunks out/${{ matrix.res }}/chunks --out out/What_If_the_Moon_Hit_Earth_${{ matrix.res }}_30fps.mp4
+      - uses: actions/upload-artifact@v4
+        with: { name: "FINAL-${{ matrix.res }}", path: "out/What_If_the_Moon_Hit_Earth_${{ matrix.res }}_30fps.mp4", retention-days: 30 }
+      - if: ${{ inputs.release }}
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          tag="film-${{ github.run_number }}"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "What If the Moon Hit Earth? (run ${{ github.run_number }})" --notes "Rendered by GitHub Actions"
+          gh release upload "$tag" out/What_If_the_Moon_Hit_Earth_${{ matrix.res }}_30fps.mp4 --clobber
